@@ -1,9 +1,8 @@
 from uiutils import (get_font, display_cjk_string, Button, color_white,
                      color_bg, color_purple, lal, draw, splash, display,
-                     wifi_logo, arrow_logo_2)
+                     wifi_logo, arrow_logo_2, la)
 import time, os
 import subprocess
-
 
 # Init Key
 button = Button()
@@ -19,7 +18,6 @@ wifi2 = "/etc/wpa_supplicant/wpa_supplicant.conf"
 def safe_write_file(path, content):
     """Securely write to system files with sudo fallback"""
     try:
-        # Method 1: Direct write with sudo tee
         subprocess.run(
             f'echo "{content}" | sudo tee {path} >/dev/null',
             shell=True,
@@ -27,42 +25,44 @@ def safe_write_file(path, content):
             executable='/bin/bash'
         )
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"Write failed, trying temp file... Error: {e}")
+    except subprocess.CalledProcessError:
         try:
-            # Method 2: Temp file fallback
             tmp_path = f"/tmp/{os.path.basename(path)}.tmp"
             with open(tmp_path, "w") as f:
                 f.write(content)
-            subprocess.run(
-                ["sudo", "cp", tmp_path, path],
-                check=True
-            )
+            subprocess.run(["sudo", "cp", tmp_path, path], check=True)
             os.remove(tmp_path)
             return True
-        except Exception as e:
-            print(f"Temp file method failed: {e}")
+        except Exception:
             return False
 
-# Read original configuration
-try:
-    with open(wifi1, "r") as f:
-        content = f.read()
-        ct = content.find("REGDOMAIN=")
-        ct_code = content[ct + 10: ct + 12]
+def get_current_country():
+    """Get current country code from the most authoritative source"""
+    try:
+        # Try raspi-config first
+        result = subprocess.run(["sudo", "raspi-config", "nonint", "get_wifi_country"],
+                               capture_output=True, text=True)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()[:2]
+        
+        # Fall back to wpa_supplicant
+        result = subprocess.run(["sudo", "grep", "country=", wifi2],
+                              capture_output=True, text=True)
+        if result.returncode == 0:
+            return result.stdout.split("country=")[1][:2]
+        
+        # Final fallback to crda
+        result = subprocess.run(["sudo", "grep", "REGDOMAIN=", wifi1],
+                              capture_output=True, text=True)
+        if result.returncode == 0:
+            return result.stdout.split("REGDOMAIN=")[1][:2]
+    except Exception:
+        pass
+    
+    return "US"  # Default if none found
 
-    with open(wifi2, "r") as f:
-        content2 = f.read()
-        ct2 = content2.find("country=")
-        ct_code2 = content2[ct2 + 8: ct2 + 10]
-except PermissionError:
-    print("Permission denied, trying sudo read...")
-    content = subprocess.getoutput(f"sudo cat {wifi1}")
-    ct = content.find("REGDOMAIN=")
-    ct_code = content[ct + 10: ct + 12]
-    content2 = subprocess.getoutput(f"sudo cat {wifi2}")
-    ct2 = content2.find("country=")
-    ct_code2 = content2[ct2 + 8: ct2 + 10]
+# Get current country code
+ct_code = get_current_country()
 
 # UI initialization
 splash.paste(wifi_logo, (133, 25), wifi_logo)
@@ -78,8 +78,6 @@ display_cjk_string(
     color=color_white,
     background_color=color_bg,
 )
-
-print("Current country code:", ct_code, ct_code2)
 
 country_list = [
     ["United States", "US"],
@@ -105,7 +103,6 @@ display_cjk_string(
 )
 display.ShowImage(splash)
 
-
 while True:
     draw.rectangle([(20, 175), (300, 210)], fill=color_white)
     splash.paste(arrow_logo_2, (277, 185), arrow_logo_2)
@@ -130,35 +127,57 @@ while True:
         os._exit(0)
 
 new_code = country_list[select][1]
-print("Selected country code:", new_code)
 
-# Update configuration content
-if ct >= 0:
-    content = content.replace(f"REGDOMAIN={ct_code}", f"REGDOMAIN={new_code}")
-else:
-    content = f"{content}\nREGDOMAIN={new_code}\n" if content else f"REGDOMAIN={new_code}\n"
+# Update all country code locations
+success = True
 
-if ct2 >= 0:
-    content2 = content2.replace(f"country={ct_code2}", f"country={new_code}")
-else:
-    content2 = f"{content2}\ncountry={new_code}\n" if content2 else f"country={new_code}\n"
+# 1. Update /etc/default/crda
+try:
+    content = subprocess.getoutput(f"sudo cat {wifi1}")
+    if "REGDOMAIN=" in content:
+        new_content = content.replace(f"REGDOMAIN={ct_code}", f"REGDOMAIN={new_code}")
+    else:
+        new_content = f"{content}\nREGDOMAIN={new_code}\n" if content else f"REGDOMAIN={new_code}\n"
+    success &= safe_write_file(wifi1, new_content)
+except Exception:
+    success = False
 
-# Securely write files
-if safe_write_file(wifi1, content) and safe_write_file(wifi2, content2):
-    # Apply settings immediately
+# 2. Update /etc/wpa_supplicant/wpa_supplicant.conf
+try:
+    content = subprocess.getoutput(f"sudo cat {wifi2}")
+    if "country=" in content:
+        new_content = content.replace(f"country={ct_code}", f"country={new_code}")
+    else:
+        new_content = f"{content}\ncountry={new_code}\n" if content else f"country={new_code}\n"
+    success &= safe_write_file(wifi2, new_content)
+except Exception:
+    success = False
+
+# 3. Update Raspberry Pi configuration
+try:
+    subprocess.run(["sudo", "raspi-config", "nonint", "do_wifi_country", new_code], 
+                  check=True, stderr=subprocess.DEVNULL)
+except subprocess.CalledProcessError:
+    success = False
+
+# Apply settings immediately
+if success:
     try:
-        subprocess.run(["sudo", "iw", "reg", "set", new_code], check=True)
-        subprocess.run(["sudo", "systemctl", "restart", "wpa_supplicant"], check=True)
+        subprocess.run(["sudo", "iw", "reg", "set", new_code], 
+                      check=True, stderr=subprocess.DEVNULL)
+        subprocess.run(["sudo", "systemctl", "restart", "wpa_supplicant"], 
+                      check=True, stderr=subprocess.DEVNULL)
+        subprocess.run(["sudo", "systemctl", "restart", "dhcpcd"], 
+                      check=True, stderr=subprocess.DEVNULL)
         msg = "Settings Saved!"
         bg_color = color_purple
-    except subprocess.CalledProcessError as e:
-        msg = "Failed to apply settings!"
-        bg_color = (255, 0, 0)
+    except subprocess.CalledProcessError:
+        msg = "Settings Saved (apply pending reboot)"
+        bg_color = color_purple
 else:
     msg = "Save Failed! Check permissions"
     bg_color = (255, 0, 0)
 
-# Show operation result
 text_width = draw.textlength(msg, font=font2)
 title_x = (320 - text_width) / 2
 display_cjk_string(
