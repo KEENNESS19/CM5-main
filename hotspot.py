@@ -72,7 +72,7 @@ os.system("sudo nmcli connection delete Hotspot-7")
 # Creat Wifi Hotspot
 result = os.system(hotspot_cmd)
 if result == 0:
-    print("Wi-Fi Hotspot Created Successfully??")
+    print("Wi-Fi Hotspot Created Successfully")
 else:
     print("Wi-Fi Hotspot Created Failed heck The Relevant Settings")
 
@@ -88,10 +88,11 @@ display.ShowImage(splash)
 while True:
     if button.press_a() or button.press_b() or button.press_c() or button.press_d():
         time.sleep(1)
-        close_result = os.system("sudo nmcli connection dowm Hostspot-7")
-        if close_request == 0:
+        close_result = os.system("sudo nmcli connection down Hotspot-7")
+        if close_result == 0:
             print("stop success")
             time.sleep(1)
             os.system("sudo reboot")
+        else:
+            print(f"Failed to stop hotspot, error code: {close_result}")
         break
-
