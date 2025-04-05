@@ -41,6 +41,28 @@ def calculate_volume(data):
     fft_data = np.abs(fft_temp_data)[0: fft_temp_data.size // 2 + 1]
     return sum(fft_data) // len(fft_data)
 
+def draw_cir(ch):
+    if ch > 15:
+        ch = 15
+    clear_top()
+    draw.bitmap((145, 40), mic_logo, mic_purple)
+    radius = 4
+    cy = 60
+    centers = [(62, cy), (87, cy), (112, cy), (210, cy), (235, cy), (260, cy)]
+    for center in centers:
+        random_offset = random.randint(0, ch)
+        new_y = center[1] + random_offset
+        new_y2 = center[1] - random_offset
+
+        draw.line([center[0], new_y2, center[0], new_y], fill=mic_purple, width=11)
+
+        top_left = (center[0] - radius, new_y - radius)
+        bottom_right = (center[0] + radius, new_y + radius)
+        draw.ellipse([top_left, bottom_right], fill=mic_purple)
+        top_left = (center[0] - radius, new_y2 - radius)
+        bottom_right = (center[0] + radius, new_y2 + radius)
+        draw.ellipse([top_left, bottom_right], fill=mic_purple)
+
 def start_recording():
     p = pyaudio.PyAudio()
     stream = p.open(format=FORMAT,
@@ -65,6 +87,12 @@ def start_recording():
         data = stream.read(CHUNK)
         volume = calculate_volume(data)
         
+        rt_data = np.frombuffer(data, dtype=np.int16)
+        fft_temp_data = fftpack.fft(rt_data, rt_data.size, overwrite_x=True)
+        fft_data = np.abs(fft_temp_data)[0:fft_temp_data.size // 2 + 1]
+        vol = sum(fft_data) // len(fft_data)
+        draw_cir(int(vol / 10000))  # 调整除数使波形显示合适
+        display.ShowImage(splash)
         if not start_recording_flag:
             pre_record_frames.append(data)  # 保存到预录音缓冲区
             if len(pre_record_frames) > pre_record_length:
@@ -158,6 +186,7 @@ def draw_single_wave(start_x, start_y, width, height, ch):
             current_point = (x + start_x, y_center + start_y)
             draw.line([previous_point, current_point], fill=mic_purple, width=2)
             previous_point, x = current_point, x + 1
+            
 
 def detect_keyword():
     # 初始化关键词检测
