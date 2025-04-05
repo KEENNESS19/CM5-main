@@ -12,18 +12,7 @@ picam2.configure(picam2.create_preview_configuration(main={"format": 'RGB888', "
 picam2.start()
 
 
-FONT_PATH = "/home/pi/RaspberryPi-CM4/model/msyh.ttc"
 
-# Function to add Chinese text to image
-
-    
-#def cv2AddChineseText(img, text, position, textColor=(200, 0, 200), textSize=10):
-#    if isinstance(img, np.ndarray):
-#        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-#    draw = ImageDraw.Draw(img)
-#    fontStyle = ImageFont.truetype("/home/pi/model/msyh.ttc", textSize, encoding="utf-8")
-#    draw.text(position, text, textColor, font=fontStyle)
-#    return cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
 
 def cv2AddChineseText(img, text, position, textColor=(200, 0, 200), textSize=10, max_width=300):
     if isinstance(img, np.ndarray):
@@ -63,11 +52,18 @@ while True:
     # Detect barcodes
     barcodes = pyzbar.decode(img_gray) 
     for barcode in barcodes:
+      try:
         barcodeData = barcode.data.decode("utf-8")
-        barcodeType = barcode.type
-        text = "{} ({})".format(barcodeData, barcodeType)
-        img = cv2AddChineseText(img, text, (10, 30), (0, 255, 0), 30)
-        print("[INFO] Found {} barcode: {}".format(barcodeType, barcodeData))
+      except UnicodeDecodeError:
+        try:
+          barcodeData = barcode.data.decode("gbk")  
+        except:
+          barcodeData = barcode.data.decode("utf-8", errors="replace")  
+        
+      barcodeType = barcode.type
+      text = "{} ({})".format(barcodeData, barcodeType)
+      img = cv2AddChineseText(img, text, (10, 30), (0, 255, 0), 30)
+      print("[INFO] Found {} barcode: {}".format(barcodeType, barcodeData))
 
  
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
