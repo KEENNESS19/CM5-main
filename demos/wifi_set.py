@@ -162,20 +162,24 @@ except subprocess.CalledProcessError:
 
 # Apply settings immediately
 if success:
-    try:
-        subprocess.run(["sudo", "iw", "reg", "set", new_code], 
-                      check=True, stderr=subprocess.DEVNULL)
-        subprocess.run(["sudo", "systemctl", "restart", "wpa_supplicant"], 
-                      check=True, stderr=subprocess.DEVNULL)
-        subprocess.run(["sudo", "systemctl", "restart", "dhcpcd"], 
-                      check=True, stderr=subprocess.DEVNULL)
-        msg = "Settings Saved!"
-        bg_color = color_purple
-    except subprocess.CalledProcessError:
-        msg = "Settings Saved (apply pending reboot)"
-        bg_color = color_purple
+
+    subprocess.run(["sudo", "iw", "reg", "set", new_code], 
+                  check=True, stderr=subprocess.DEVNULL)
+    subprocess.run(["sudo", "systemctl", "restart", "wpa_supplicant"], 
+                  check=True, stderr=subprocess.DEVNULL)
+    subprocess.run(["sudo", "systemctl", "restart", "dhcpcd"], 
+                  check=True, stderr=subprocess.DEVNULL)
+    if la=='cn':
+      msg = "设置成功"
+    else:
+      msg = "Settings Saved!"
+    bg_color = color_purple
+
 else:
-    msg = "Save Failed! Check permissions"
+    if la=='cn':
+      msg ="设置失败"
+    else:
+      msg = "Save Failed"
     bg_color = (255, 0, 0)
 
 text_width = draw.textlength(msg, font=font2)
