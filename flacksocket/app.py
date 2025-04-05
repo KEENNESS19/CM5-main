@@ -10,6 +10,9 @@ from flask_socketio import SocketIO, send, emit
 from camera_dog import Dog_Camera
 from concurrent.futures import ThreadPoolExecutor
 
+os.environ['PATH'] = '/home/pi/RaspberryPi-CM4/xgovenv/bin:' + os.environ.get('PATH', '')
+os.chdir('/home/pi/RaspberryPi-CM4')  
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
@@ -230,21 +233,33 @@ def handle_right(data):
     last_access_time = time.time()
     executor.submit(execute_action, dog.move_y, int(data))
 
-@socketio.on('height')  
-def handle_height(data):  
+@socketio.on('height')
+def handle_height(data):
     global last_access_time
     last_access_time = time.time()
     data = int(data)
-    if data == 50:
-        data = 95
-    elif data < 50:
-        data = 95 - data
-    elif data > 50:
-        data = 95 + data
-    executor.submit(execute_action, lambda: dog.translation('z', data))
+    
+    # Map 0-100 slider to range with 50 at 95
+    if data < 50:
+        height = int(95 - (50 - data) * 1.0)  # Adjust multiplier as needed
+    else:
+        height = int(95 + (data - 50) * 1.0)  # Adjust multiplier as needed
+    
+    # Ensure within safe bounds
+    height = max(30, min(160, height))
+    
+    executor.submit(execute_action, lambda: dog.translation('z', height))
 
 def run_flask():
-    socketio.run(app, host='0.0.0.0', port=8080, debug=False, use_reloader=False)
+    socketio.run(
+    app, 
+    host='0.0.0.0', 
+    port=8080, 
+    debug=False, 
+    use_reloader=False,
+    allow_unsafe_werkzeug=True 
+)
+
 
 if __name__ == '__main__':
     # Start monitor thread
